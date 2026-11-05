@@ -5,10 +5,18 @@
   --color-sand: #d9cbbd;
   --color-terracotta: #98462f;
   --color-graphite: #292827;
+  --color-accent: #dbef53;
+  --color-accent-hover: #c5d943;
+  --color-error: #a02d1b;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   font-family: system-ui, sans-serif;
+}
+
+::selection {
+  background: #dbef53;
+  color: #292827;
 }

@@ -40,6 +40,12 @@ describe('calculateBudget', () => {
     expect(result.estimatedSurplus).toBe(0.75)
   })
 
+  it('redondea hacia arriba solo cuando el precio con margen es fraccionario', () => {
+    const base = { ...budget, estimatedHours: 0, additionalExpenses: 0, desiredMarginPercent: 20 }
+    expect(calculateBudget({ ...base, materialsCost: 1 }).suggestedPrice).toBe(2)
+    expect(calculateBudget({ ...base, materialsCost: 4 }).suggestedPrice).toBe(5)
+  })
+
   it('acepta el margen máximo del 90 %', () => {
     const result = calculateBudget({ ...budget, desiredMarginPercent: MAX_DESIRED_MARGIN_PERCENT })
     expect(result.suggestedPrice).toBe(500_000)

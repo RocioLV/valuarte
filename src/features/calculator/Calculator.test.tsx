@@ -1,0 +1,157 @@
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it } from 'vitest'
+import { Calculator } from './Calculator'
+
+async function fillForm(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText('Nombre de la obra o encargo'), 'Paisaje')
+  await user.selectOptions(screen.getByLabelText('Técnica artística'), 'Pintura')
+  await user.type(screen.getByLabelText('Costo de materiales (CLP)'), '20000')
+  await user.type(screen.getByLabelText('Gastos adicionales (CLP)'), '5000')
+  await user.type(screen.getByLabelText('Horas estimadas'), '5')
+  await user.type(screen.getByLabelText('Valor por hora (CLP)'), '5000')
+  await user.type(screen.getByLabelText('Margen deseado (%)'), '20')
+}
+
+describe('Calculadora', () => {
+  it('presenta todos los campos y el estado inicial', () => {
+    render(<Calculator />)
+    expect(screen.getByRole('heading', { name: 'Calcula tu precio' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Información de la obra' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Costos de producción' })).toBeInTheDocument()
+    for (const label of ['Nombre de la obra o encargo', 'Técnica artística', 'Costo de materiales (CLP)', 'Horas estimadas', 'Valor por hora (CLP)', 'Gastos adicionales (CLP)', 'Margen deseado (%)']) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument()
+    }
+    expect(screen.getByText(/completa los datos/i)).toBeInTheDocument()
+  })
+
+  it('asocia errores accesibles a los campos vacíos y rechaza valores fuera de rango', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    const name = screen.getByLabelText('Nombre de la obra o encargo')
+    expect(name).toHaveAttribute('aria-invalid', 'true')
+    expect(name).toHaveAccessibleDescription('Ingresa el nombre de la obra o encargo.')
+    await fillForm(user)
+    const margin = screen.getByLabelText('Margen deseado (%)')
+    await user.clear(margin)
+    await user.type(margin, '91')
+    const materials = screen.getByLabelText('Costo de materiales (CLP)')
+    await user.clear(materials)
+    await user.type(materials, '-1')
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    expect(margin).toHaveAccessibleDescription(/margen máximo es 90/i)
+    expect(materials).toHaveAccessibleDescription(/ingresa un monto válido/i)
+  })
+
+  it('calcula los resultados y los actualiza al editar y volver a calcular', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    await fillForm(user)
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    const result = screen.getByRole('complementary', { name: 'El valor de tu trabajo' })
+    expect(within(result).getByText('$62.500')).toBeInTheDocument()
+    expect(within(result).getByText('$50.000')).toBeInTheDocument()
+    expect(within(result).getByText('$25.000')).toBeInTheDocument()
+    expect(within(result).getByText('$12.500')).toBeInTheDocument()
+    expect(within(result).getByText('20 %')).toBeInTheDocument()
+    const materials = screen.getByLabelText('Costo de materiales (CLP)')
+    await user.clear(materials)
+    await user.type(materials, '40000')
+    expect(within(result).queryByText('$62.500')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    expect(within(result).getByText('$87.500')).toBeInTheDocument()
+  })
+
+  it('permite navegar por los primeros controles con el teclado', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    await user.tab()
+    expect(screen.getByLabelText('Nombre de la obra o encargo')).toHaveFocus()
+    await user.tab()
+    expect(screen.getByLabelText('Técnica artística')).toHaveFocus()
+    await user.tab()
+    expect(screen.getByLabelText('Costo de materiales (CLP)')).toHaveFocus()
+  })
+
+  it('carga un ejemplo editable, limpia errores y descarta resultados previos', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    expect(screen.getByLabelText('Nombre de la obra o encargo')).toHaveAttribute('aria-invalid', 'true')
+    const example = screen.getByRole('button', { name: 'Cargar ejemplo' })
+    await user.click(example)
+    expect(screen.getByLabelText('Nombre de la obra o encargo')).toHaveValue('Paisaje en calma')
+    expect(screen.getByLabelText('Nombre de la obra o encargo')).toHaveAttribute('aria-invalid', 'false')
+    expect(screen.getByLabelText('Horas estimadas')).toHaveValue('5.5')
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    const result = screen.getByRole('complementary', { name: 'El valor de tu trabajo' })
+    expect(within(result).getByText('$27.500')).toBeInTheDocument()
+    expect(within(result).getByText('$65.625')).toBeInTheDocument()
+    await user.click(example)
+    expect(within(result).queryByText('$65.625')).not.toBeInTheDocument()
+    expect(within(result).getByText(/completa los datos/i)).toBeInTheDocument()
+  })
+
+  it('permite cargar el ejemplo mediante teclado', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    for (let i = 0; i < 9; i++) await user.tab()
+    expect(screen.getByRole('button', { name: 'Cargar ejemplo' })).toHaveFocus()
+    await user.keyboard('{Enter}')
+    expect(screen.getByLabelText('Nombre de la obra o encargo')).toHaveValue('Paisaje en calma')
+  })
+
+  it('formatea montos al salir y permite editarlos sin separadores', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    const materials = screen.getByLabelText('Costo de materiales (CLP)')
+    await user.type(materials, '5000')
+    await user.tab()
+    expect(materials).toHaveValue('5.000')
+    await user.click(materials)
+    expect(materials).toHaveValue('5000')
+    await user.clear(materials)
+    await user.type(materials, '3200,50')
+    await user.tab()
+    expect(materials).toHaveValue('3.200,50')
+  })
+
+  it.each(['1,5', '1.5'])('calcula horas fraccionarias con %s', async (hoursValue) => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    await user.click(screen.getByRole('button', { name: 'Cargar ejemplo' }))
+    const hours = screen.getByLabelText('Horas estimadas')
+    await user.clear(hours)
+    await user.type(hours, hoursValue)
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    const result = screen.getByRole('complementary', { name: 'El valor de tu trabajo' })
+    expect(within(result).getByText('$7.500')).toBeInTheDocument()
+    expect(within(result).getByText('$40.625')).toBeInTheDocument()
+  })
+
+  it('rechaza formatos ambiguos o negativos sin alterarlos', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    const materials = screen.getByLabelText('Costo de materiales (CLP)')
+    await user.type(materials, '3.20')
+    await user.tab()
+    expect(materials).toHaveValue('3.20')
+    expect(materials).toHaveAccessibleDescription(/ingresa un monto válido/i)
+    const hours = screen.getByLabelText('Horas estimadas')
+    await user.type(hours, '-1')
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    expect(hours).toHaveAccessibleDescription(/ingresa horas válidas/i)
+  })
+
+  it('muestra un error si el cálculo excede el rango seguro', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    await fillForm(user)
+    const hours = screen.getByLabelText('Horas estimadas')
+    await user.clear(hours)
+    await user.type(hours, '9007199254740991')
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    expect(screen.getByRole('alert')).toHaveTextContent(/excede el rango numérico/i)
+  })
+})
