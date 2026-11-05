@@ -3,28 +3,18 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { calculateBudget, MAX_DESIRED_MARGIN_PERCENT } from '../../domain/calculations'
-import type { BudgetResult } from '../../domain/types'
+import type { BudgetCosts, BudgetResult } from '../../domain/types'
+import { currency, formatMoneyInput, moneyField, percentage, unformatMoneyInput } from '../../lib/money'
+import { Comparison } from '../comparison/Comparison'
 
 const numberField = z.string().trim().min(1, 'Ingresa un valor.').pipe(
   z.coerce.number<string>().finite('Ingresa un número válido.').min(0, 'Ingresa un valor igual o mayor a cero.').max(Number.MAX_SAFE_INTEGER, 'El valor es demasiado grande.'),
 )
 
-const moneyField = z.string().trim().min(1, 'Ingresa un valor.')
-  .regex(/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d+)?$/, 'Ingresa un monto válido, por ejemplo 5.000.')
-  .transform((value) => Number(value.replaceAll('.', '').replace(',', '.')))
-  .pipe(z.number().finite('Ingresa un monto válido.').max(Number.MAX_SAFE_INTEGER, 'El valor es demasiado grande.'))
-
 const hoursField = z.string().trim().min(1, 'Ingresa un valor.')
   .regex(/^\d+(?:[.,]\d+)?$/, 'Ingresa horas válidas, por ejemplo 1,5 o 1.5.')
   .transform((value) => Number(value.replace(',', '.')))
   .pipe(z.number().finite('Ingresa horas válidas.').max(Number.MAX_SAFE_INTEGER, 'El valor es demasiado grande.'))
-
-function formatMoneyInput(value: string): string {
-  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d+)?$/.test(value)) return value
-  const [integer, decimals] = value.replaceAll('.', '').split(',')
-  const formatted = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-  return decimals === undefined ? formatted : `${formatted},${decimals}`
-}
 
 const schema = z.object({
   name: z.string().trim().min(1, 'Ingresa el nombre de la obra o encargo.'),
@@ -40,9 +30,6 @@ type FormInput = z.input<typeof schema>
 type FormOutput = z.output<typeof schema>
 type FieldName = keyof FormInput
 
-const currency = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 })
-const percentage = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 })
-
 const inputClass = 'mt-2 w-full border-2 border-graphite bg-white px-4 py-3 text-base text-graphite outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent aria-invalid:border-error'
 
 const example: FormInput = {
@@ -57,6 +44,7 @@ const example: FormInput = {
 
 export function Calculator() {
   const [result, setResult] = useState<BudgetResult | null>(null)
+  const [costs, setCosts] = useState<BudgetCosts | null>(null)
   const [calculationError, setCalculationError] = useState('')
   const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<FormInput, unknown, FormOutput>({
     resolver: zodResolver(schema),
@@ -66,6 +54,7 @@ export function Calculator() {
   function onSubmit(values: FormOutput) {
     try {
       setResult(calculateBudget(values))
+      setCosts(values)
       setCalculationError('')
     } catch (error) {
       setResult(null)
@@ -89,8 +78,7 @@ export function Calculator() {
           inputMode={options.money || options.decimal || options.type === 'number' ? 'decimal' : undefined}
           {...registration}
           onFocus={options.money ? (event) => {
-            const value = event.currentTarget.value
-            if (/^(?:\d+|\d{1,3}(?:\.\d{3})+)(?:,\d+)?$/.test(value)) setValue(name, value.replaceAll('.', ''))
+            setValue(name, unformatMoneyInput(event.currentTarget.value))
           } : undefined}
           onBlur={options.money ? (event) => {
             const formatted = formatMoneyInput(event.currentTarget.value.trim())
@@ -182,6 +170,9 @@ export function Calculator() {
           ) : <p className="mt-7 text-sm leading-relaxed">Completa los datos y calcula para conocer el precio sugerido y el detalle de tu estimación.</p>}
         </div>
       </aside>
+      <div className="lg:col-span-2">
+        <Comparison costs={result ? costs : null} totalCost={result?.totalCost ?? null} />
+      </div>
     </section>
   )
 }
