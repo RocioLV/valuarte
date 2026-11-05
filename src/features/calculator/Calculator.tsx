@@ -1,40 +1,26 @@
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { calculateBudget, MAX_DESIRED_MARGIN_PERCENT } from '../../domain/calculations'
+import { ARTWORK_TYPES, TECHNIQUES } from '../../domain/classification'
 import type { BudgetCosts, BudgetResult } from '../../domain/types'
-import { currency, formatMoneyInput, moneyField, percentage, unformatMoneyInput } from '../../lib/money'
+import { currency, formatMoneyInput, percentage, unformatMoneyInput } from '../../lib/money'
 import { Comparison } from '../comparison/Comparison'
+import { calculatorSchema } from './schema'
 
-const numberField = z.string().trim().min(1, 'Ingresa un valor.').pipe(
-  z.coerce.number<string>().finite('Ingresa un número válido.').min(0, 'Ingresa un valor igual o mayor a cero.').max(Number.MAX_SAFE_INTEGER, 'El valor es demasiado grande.'),
-)
-
-const hoursField = z.string().trim().min(1, 'Ingresa un valor.')
-  .regex(/^\d+(?:[.,]\d+)?$/, 'Ingresa horas válidas, por ejemplo 1,5 o 1.5.')
-  .transform((value) => Number(value.replace(',', '.')))
-  .pipe(z.number().finite('Ingresa horas válidas.').max(Number.MAX_SAFE_INTEGER, 'El valor es demasiado grande.'))
-
-const schema = z.object({
-  name: z.string().trim().min(1, 'Ingresa el nombre de la obra o encargo.'),
-  technique: z.string().trim().min(1, 'Selecciona una técnica.'),
-  materialsCost: moneyField,
-  estimatedHours: hoursField,
-  hourlyRate: moneyField,
-  additionalExpenses: moneyField,
-  desiredMarginPercent: numberField.pipe(z.number().max(MAX_DESIRED_MARGIN_PERCENT, `El margen máximo es ${MAX_DESIRED_MARGIN_PERCENT} %.`)),
-})
-
-type FormInput = z.input<typeof schema>
-type FormOutput = z.output<typeof schema>
-type FieldName = keyof FormInput
+type FormInput = z.input<typeof calculatorSchema>
+type FormOutput = z.output<typeof calculatorSchema>
+type FieldName = Exclude<keyof FormInput, 'artworkType' | 'technique'>
 
 const inputClass = 'mt-2 w-full border-2 border-graphite bg-white px-4 py-3 text-base text-graphite outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent aria-invalid:border-error'
 
 const example: FormInput = {
   name: 'Paisaje en calma',
-  technique: 'Pintura',
+  artworkType: 'painting',
+  artworkTypeOther: '',
+  technique: 'watercolor',
+  techniqueOther: '',
   materialsCost: '20000',
   estimatedHours: '5.5',
   hourlyRate: '5000',
@@ -46,10 +32,12 @@ export function Calculator() {
   const [result, setResult] = useState<BudgetResult | null>(null)
   const [costs, setCosts] = useState<BudgetCosts | null>(null)
   const [calculationError, setCalculationError] = useState('')
-  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<FormInput, unknown, FormOutput>({
-    resolver: zodResolver(schema),
-    defaultValues: { name: '', technique: '', materialsCost: '', estimatedHours: '', hourlyRate: '', additionalExpenses: '', desiredMarginPercent: '' },
+  const { register, handleSubmit, reset, setValue, control, formState: { errors } } = useForm<FormInput, unknown, FormOutput>({
+    resolver: zodResolver(calculatorSchema),
+    defaultValues: { name: '', artworkType: '', artworkTypeOther: '', technique: '', techniqueOther: '', materialsCost: '', estimatedHours: '', hourlyRate: '', additionalExpenses: '', desiredMarginPercent: '' },
   })
+  const artworkType = useWatch({ control, name: 'artworkType' })
+  const technique = useWatch({ control, name: 'technique' })
 
   function onSubmit(values: FormOutput) {
     try {
@@ -101,24 +89,28 @@ export function Calculator() {
         <div className="mb-8 border-b-2 border-graphite pb-5">
           <p className="font-mono text-xs font-bold tracking-[0.12em] uppercase">01 / Tu obra</p>
           <h2 id="calculator-title" className="mt-3 font-serif text-3xl font-bold">Calcula tu precio</h2>
-          <p className="mt-3 text-sm leading-relaxed">Todos los campos son obligatorios. Los montos en pesos chilenos se formatean al salir del campo.</p>
+          <p className="mt-3 text-sm leading-relaxed">El tipo de obra y la técnica son opcionales; los demás campos son obligatorios. Los montos en pesos chilenos se formatean al salir del campo.</p>
         </div>
         <form noValidate onSubmit={handleSubmit(onSubmit, () => { setResult(null); setCalculationError('') })} onChange={() => { setResult(null); setCalculationError('') }} className="space-y-6">
           <fieldset className="space-y-6">
             <legend className="mb-4 w-full border-b-2 border-graphite pb-3 font-mono text-sm font-bold uppercase">Información de la obra</legend>
             {field('name', 'Nombre de la obra o encargo')}
             <div>
-            <label htmlFor="technique" className="block text-sm font-semibold">Técnica artística</label>
-            <select id="technique" {...register('technique')} aria-invalid={Boolean(errors.technique)} aria-describedby={errors.technique ? 'technique-error' : undefined} className={inputClass}>
-              <option value="">Selecciona una técnica</option>
-              <option value="Pintura">Pintura</option>
-              <option value="Ilustración">Ilustración</option>
-              <option value="Escultura">Escultura</option>
-              <option value="Fotografía">Fotografía</option>
-              <option value="Otra">Otra</option>
-            </select>
-            {errors.technique && <p id="technique-error" className="mt-1 text-sm font-semibold text-error">{errors.technique.message}</p>}
+              <label htmlFor="artworkType" className="block text-sm font-semibold">Tipo de obra (opcional)</label>
+              <select id="artworkType" {...register('artworkType')} className={inputClass}>
+                <option value="">Sin especificar</option>
+                {ARTWORK_TYPES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+              </select>
             </div>
+            {artworkType === 'other' && field('artworkTypeOther', 'Especifica el tipo de obra')}
+            <div>
+              <label htmlFor="technique" className="block text-sm font-semibold">Técnica principal (opcional)</label>
+              <select id="technique" {...register('technique')} className={inputClass}>
+                <option value="">Sin especificar</option>
+                {TECHNIQUES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+              </select>
+            </div>
+            {technique === 'other' && field('techniqueOther', 'Especifica la técnica principal')}
           </fieldset>
           <fieldset className="space-y-6 pt-2">
             <legend className="mb-4 w-full border-b-2 border-graphite pb-3 font-mono text-sm font-bold uppercase">Costos de producción</legend>

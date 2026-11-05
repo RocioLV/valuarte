@@ -4,7 +4,7 @@ import type { BudgetInput } from './types'
 
 const budget: BudgetInput = {
   name: 'Obra',
-  technique: 'Pintura',
+  technique: 'watercolor',
   materialsCost: 20_000,
   estimatedHours: 5,
   hourlyRate: 5_000,

@@ -5,7 +5,6 @@ import { Calculator } from './Calculator'
 
 async function fillForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Nombre de la obra o encargo'), 'Paisaje')
-  await user.selectOptions(screen.getByLabelText('Técnica artística'), 'Pintura')
   await user.type(screen.getByLabelText('Costo de materiales (CLP)'), '20000')
   await user.type(screen.getByLabelText('Gastos adicionales (CLP)'), '5000')
   await user.type(screen.getByLabelText('Horas estimadas'), '5')
@@ -19,7 +18,7 @@ describe('Calculadora', () => {
     expect(screen.getByRole('heading', { name: 'Calcula tu precio' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Información de la obra' })).toBeInTheDocument()
     expect(screen.getByRole('group', { name: 'Costos de producción' })).toBeInTheDocument()
-    for (const label of ['Nombre de la obra o encargo', 'Técnica artística', 'Costo de materiales (CLP)', 'Horas estimadas', 'Valor por hora (CLP)', 'Gastos adicionales (CLP)', 'Margen deseado (%)']) {
+    for (const label of ['Nombre de la obra o encargo', 'Tipo de obra (opcional)', 'Técnica principal (opcional)', 'Costo de materiales (CLP)', 'Horas estimadas', 'Valor por hora (CLP)', 'Gastos adicionales (CLP)', 'Margen deseado (%)']) {
       expect(screen.getByLabelText(label)).toBeInTheDocument()
     }
     expect(screen.getByText(/completa los datos/i)).toBeInTheDocument()
@@ -69,7 +68,9 @@ describe('Calculadora', () => {
     await user.tab()
     expect(screen.getByLabelText('Nombre de la obra o encargo')).toHaveFocus()
     await user.tab()
-    expect(screen.getByLabelText('Técnica artística')).toHaveFocus()
+    expect(screen.getByLabelText('Tipo de obra (opcional)')).toHaveFocus()
+    await user.tab()
+    expect(screen.getByLabelText('Técnica principal (opcional)')).toHaveFocus()
     await user.tab()
     expect(screen.getByLabelText('Costo de materiales (CLP)')).toHaveFocus()
   })
@@ -96,10 +97,61 @@ describe('Calculadora', () => {
   it('permite cargar el ejemplo mediante teclado', async () => {
     const user = userEvent.setup()
     render(<Calculator />)
-    for (let i = 0; i < 9; i++) await user.tab()
+    for (let i = 0; i < 10; i++) await user.tab()
     expect(screen.getByRole('button', { name: 'Cargar ejemplo' })).toHaveFocus()
     await user.keyboard('{Enter}')
     expect(screen.getByLabelText('Nombre de la obra o encargo')).toHaveValue('Paisaje en calma')
+  })
+
+  it('calcula sin clasificación y mantiene selecciones independientes al calcular', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    await fillForm(user)
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    expect(within(screen.getByRole('complementary', { name: 'El valor de tu trabajo' })).getByText('$62.500')).toBeInTheDocument()
+    const type = screen.getByLabelText('Tipo de obra (opcional)')
+    const technique = screen.getByLabelText('Técnica principal (opcional)')
+    await user.selectOptions(type, 'sculpture')
+    await user.selectOptions(technique, 'watercolor')
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    expect(type).toHaveValue('sculpture')
+    expect(technique).toHaveValue('watercolor')
+    expect(within(screen.getByRole('complementary', { name: 'El valor de tu trabajo' })).getByText('$62.500')).toBeInTheDocument()
+  })
+
+  it('solicita las descripciones de otras opciones y conserva lo ingresado', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    await user.click(screen.getByRole('button', { name: 'Cargar ejemplo' }))
+    await user.selectOptions(screen.getByLabelText('Tipo de obra (opcional)'), 'other')
+    await user.selectOptions(screen.getByLabelText('Técnica principal (opcional)'), 'other')
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    const otherType = screen.getByLabelText('Especifica el tipo de obra')
+    const otherTechnique = screen.getByLabelText('Especifica la técnica principal')
+    expect(otherType).toHaveAccessibleDescription('Especifica el tipo de obra.')
+    expect(otherTechnique).toHaveAccessibleDescription('Especifica la técnica principal.')
+    await user.type(otherType, 'Instalación')
+    await user.type(otherTechnique, 'Bordado')
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+    expect(otherType).toHaveValue('Instalación')
+    expect(otherTechnique).toHaveValue('Bordado')
+    expect(within(screen.getByRole('complementary', { name: 'El valor de tu trabajo' })).getByText('$65.625')).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Tipo de obra (opcional)'), 'painting')
+    expect(screen.queryByLabelText('Especifica el tipo de obra')).not.toBeInTheDocument()
+  })
+
+  it('permite acceder con teclado al campo personalizado', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    await user.tab()
+    await user.tab()
+    const type = screen.getByLabelText('Tipo de obra (opcional)')
+    expect(type).toHaveFocus()
+    await user.selectOptions(type, 'other')
+    await user.tab()
+    expect(screen.getByLabelText('Especifica el tipo de obra')).toHaveFocus()
+    await user.keyboard('Instalación')
+    expect(screen.getByLabelText('Especifica el tipo de obra')).toHaveValue('Instalación')
   })
 
   it('formatea montos al salir y permite editarlos sin separadores', async () => {

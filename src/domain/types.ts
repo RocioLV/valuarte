@@ -1,3 +1,5 @@
+import type { ArtworkTypeId, TechniqueId } from './classification'
+
 /** Importes expresados en pesos chilenos (CLP). */
 export interface BudgetCosts {
   materialsCost: number
@@ -8,7 +10,10 @@ export interface BudgetCosts {
 
 export interface BudgetInput extends BudgetCosts {
   name: string
-  technique: string
+  artworkType?: ArtworkTypeId
+  artworkTypeOther?: string
+  technique?: TechniqueId
+  techniqueOther?: string
   desiredMarginPercent: number
 }
 
