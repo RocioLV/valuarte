@@ -17,6 +17,14 @@ export interface BudgetInput extends BudgetCosts {
   desiredMarginPercent: number
 }
 
+/** Presupuesto persistido con sus datos normalizados, sin resultados derivados. */
+export interface SavedBudget {
+  id: string
+  createdAt: string
+  updatedAt: string
+  input: BudgetInput
+}
+
 export interface ScenarioResult {
   salePrice: number
   estimatedSurplus: number

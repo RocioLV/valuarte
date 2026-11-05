@@ -4,9 +4,11 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { calculateBudget, MAX_DESIRED_MARGIN_PERCENT } from '../../domain/calculations'
 import { ARTWORK_TYPES, TECHNIQUES } from '../../domain/classification'
-import type { BudgetCosts, BudgetResult } from '../../domain/types'
+import type { BudgetCosts, BudgetInput, BudgetResult, SavedBudget } from '../../domain/types'
 import { currency, formatMoneyInput, percentage, unformatMoneyInput } from '../../lib/money'
 import { Comparison } from '../comparison/Comparison'
+import { History } from '../history/History'
+import { useBudgetHistory } from '../history/useBudgetHistory'
 import { calculatorSchema } from './schema'
 
 type FormInput = z.input<typeof calculatorSchema>
@@ -28,13 +30,49 @@ const example: FormInput = {
   desiredMarginPercent: '20',
 }
 
+const emptyValues: FormInput = {
+  name: '',
+  artworkType: '',
+  artworkTypeOther: '',
+  technique: '',
+  techniqueOther: '',
+  materialsCost: '',
+  estimatedHours: '',
+  hourlyRate: '',
+  additionalExpenses: '',
+  desiredMarginPercent: '',
+}
+
+function decimalString(value: number, locale: 'es-CL' | 'en-US'): string {
+  return value.toLocaleString(locale, { useGrouping: false, maximumFractionDigits: 20 })
+}
+
+function toFormInput(input: BudgetInput): FormInput {
+  return {
+    name: input.name,
+    artworkType: input.artworkType ?? '',
+    artworkTypeOther: input.artworkTypeOther ?? '',
+    technique: input.technique ?? '',
+    techniqueOther: input.techniqueOther ?? '',
+    materialsCost: formatMoneyInput(decimalString(input.materialsCost, 'es-CL')),
+    estimatedHours: decimalString(input.estimatedHours, 'es-CL'),
+    hourlyRate: formatMoneyInput(decimalString(input.hourlyRate, 'es-CL')),
+    additionalExpenses: formatMoneyInput(decimalString(input.additionalExpenses, 'es-CL')),
+    desiredMarginPercent: decimalString(input.desiredMarginPercent, 'en-US'),
+  }
+}
+
 export function Calculator() {
   const [result, setResult] = useState<BudgetResult | null>(null)
   const [costs, setCosts] = useState<BudgetCosts | null>(null)
   const [calculationError, setCalculationError] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState('')
+  const [saveMessage, setSaveMessage] = useState('')
+  const { budgets, error: historyError, save: persistBudget, remove: removeBudget } = useBudgetHistory()
   const { register, handleSubmit, reset, setValue, control, formState: { errors } } = useForm<FormInput, unknown, FormOutput>({
     resolver: zodResolver(calculatorSchema),
-    defaultValues: { name: '', artworkType: '', artworkTypeOther: '', technique: '', techniqueOther: '', materialsCost: '', estimatedHours: '', hourlyRate: '', additionalExpenses: '', desiredMarginPercent: '' },
+    defaultValues: emptyValues,
   })
   const artworkType = useWatch({ control, name: 'artworkType' })
   const technique = useWatch({ control, name: 'technique' })
@@ -46,8 +84,70 @@ export function Calculator() {
       setCalculationError('')
     } catch (error) {
       setResult(null)
+      setCosts(null)
       setCalculationError(error instanceof RangeError ? error.message : 'No fue posible calcular el precio. Revisa los datos e inténtalo de nuevo.')
     }
+  }
+
+  function onSave(values: FormOutput) {
+    const stored = persistBudget(values, editingId ?? undefined)
+    if (!stored.ok) {
+      setSaveError(stored.error.message)
+      setSaveMessage('')
+      return
+    }
+    setSaveError('')
+    setSaveMessage(editingId ? 'Presupuesto actualizado.' : 'Presupuesto guardado.')
+  }
+
+  function editSavedBudget(budget: SavedBudget) {
+    setEditingId(budget.id)
+    reset(toFormInput(budget.input))
+    setSaveError('')
+    setSaveMessage('')
+    try {
+      setResult(calculateBudget(budget.input))
+      setCosts(budget.input)
+      setCalculationError('')
+    } catch (error) {
+      setResult(null)
+      setCosts(null)
+      setCalculationError(error instanceof RangeError ? error.message : 'No fue posible calcular el precio. Revisa los datos e inténtalo de nuevo.')
+    }
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    reset(emptyValues)
+    setResult(null)
+    setCosts(null)
+    setCalculationError('')
+    setSaveError('')
+    setSaveMessage('')
+  }
+
+  function loadExample() {
+    setEditingId(null)
+    reset(example)
+    setResult(null)
+    setCosts(null)
+    setCalculationError('')
+    setSaveError('')
+    setSaveMessage('')
+  }
+
+  function deleteSavedBudget(id: string) {
+    const removal = removeBudget(id)
+    if (removal.ok && editingId === id) cancelEdit()
+    return removal
+  }
+
+  function clearResults() {
+    setResult(null)
+    setCosts(null)
+    setCalculationError('')
+    setSaveError('')
+    setSaveMessage('')
   }
 
   function field(name: FieldName, label: string, options: { type?: string; hint?: string; money?: boolean; decimal?: boolean } = {}) {
@@ -91,7 +191,7 @@ export function Calculator() {
           <h2 id="calculator-title" className="mt-3 font-serif text-3xl font-bold">Calcula tu precio</h2>
           <p className="mt-3 text-sm leading-relaxed">El tipo de obra y la técnica son opcionales; los demás campos son obligatorios. Los montos en pesos chilenos se formatean al salir del campo.</p>
         </div>
-        <form noValidate onSubmit={handleSubmit(onSubmit, () => { setResult(null); setCalculationError('') })} onChange={() => { setResult(null); setCalculationError('') }} className="space-y-6">
+        <form noValidate onSubmit={handleSubmit(onSubmit, clearResults)} onChange={clearResults} className="space-y-6">
           <fieldset className="space-y-6">
             <legend className="mb-4 w-full border-b-2 border-graphite pb-3 font-mono text-sm font-bold uppercase">Información de la obra</legend>
             {field('name', 'Nombre de la obra o encargo')}
@@ -123,13 +223,21 @@ export function Calculator() {
             {field('desiredMarginPercent', 'Margen deseado (%)', { type: 'number', hint: `Entre 0 y ${MAX_DESIRED_MARGIN_PERCENT} % del precio de venta.` })}
           </fieldset>
           {calculationError && <p role="alert" className="text-sm font-semibold text-error">{calculationError}</p>}
+          {saveError && <p role="alert" className="text-sm font-semibold text-error">{saveError}</p>}
+          {saveMessage && <p role="status" className="text-sm font-semibold">{saveMessage}</p>}
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <button type="submit" className="border-2 border-graphite bg-accent px-6 py-4 font-mono text-sm font-bold text-graphite hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent">
               Calcular precio sugerido
             </button>
-            <button type="button" onClick={() => { reset(example); setResult(null); setCalculationError('') }} className="border-2 border-graphite bg-white px-6 py-4 font-mono text-sm font-bold text-graphite hover:bg-ivory focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent">
+            <button type="button" onClick={loadExample} className="border-2 border-graphite bg-white px-6 py-4 font-mono text-sm font-bold text-graphite hover:bg-ivory focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent">
               Cargar ejemplo
             </button>
+            <button type="button" onClick={handleSubmit(onSave, clearResults)} className="border-2 border-graphite bg-white px-6 py-4 font-mono text-sm font-bold text-graphite hover:bg-ivory focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent">
+              {editingId ? 'Actualizar presupuesto' : 'Guardar presupuesto'}
+            </button>
+            {editingId && <button type="button" onClick={cancelEdit} className="border-2 border-graphite bg-white px-6 py-4 font-mono text-sm font-bold text-graphite hover:bg-ivory focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent">
+              Cancelar edición
+            </button>}
           </div>
         </form>
       </div>
@@ -164,6 +272,15 @@ export function Calculator() {
       </aside>
       <div className="lg:col-span-2">
         <Comparison costs={result ? costs : null} totalCost={result?.totalCost ?? null} />
+      </div>
+      <div className="lg:col-span-2">
+        <History
+          budgets={budgets}
+          error={historyError}
+          editingId={editingId}
+          onEdit={editSavedBudget}
+          onDelete={deleteSavedBudget}
+        />
       </div>
     </section>
   )

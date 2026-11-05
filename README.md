@@ -1,6 +1,15 @@
 # Valuarte
 
-Base inicial de una aplicación para artistas visuales independientes. La calculadora y la gestión de presupuestos se desarrollarán en etapas posteriores.
+Aplicación web para artistas visuales independientes. Permite calcular el precio sugerido de una obra, comparar escenarios de venta y conservar un historial de presupuestos en el navegador.
+
+## Funcionalidades
+
+- Calculadora de costos, remuneración, precio sugerido y margen efectivo en pesos chilenos (CLP).
+- Comparador de dos precios de venta a partir de los costos calculados.
+- Clasificación opcional por tipo de obra y técnica principal, con opciones personalizadas.
+- Historial de presupuestos guardados en LocalStorage, con edición y eliminación.
+
+Los presupuestos se guardan únicamente en el navegador. No hay backend, autenticación ni sincronización entre dispositivos.
 
 ## Requisitos
 
