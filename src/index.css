@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ivory: #faf8f3;
+  --color-sand: #d9cbbd;
+  --color-terracotta: #98462f;
+  --color-graphite: #292827;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  font-family: system-ui, sans-serif;
+}
