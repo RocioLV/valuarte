@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
+import type { FieldErrors } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { calculateBudget, MAX_DESIRED_MARGIN_PERCENT } from '../../domain/calculations'
@@ -14,6 +15,7 @@ import { calculatorSchema } from './schema'
 type FormInput = z.input<typeof calculatorSchema>
 type FormOutput = z.output<typeof calculatorSchema>
 type FieldName = Exclude<keyof FormInput, 'artworkType' | 'technique'>
+type ConflictAction = 'reload' | 'keep'
 
 const inputClass = 'mt-2 w-full border-2 border-graphite bg-white px-4 py-3 text-base text-graphite outline-none focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent aria-invalid:border-error'
 
@@ -43,6 +45,9 @@ const emptyValues: FormInput = {
   desiredMarginPercent: '',
 }
 
+const fieldOrder: FieldName[] = ['name', 'artworkTypeOther', 'techniqueOther', 'materialsCost', 'additionalExpenses', 'estimatedHours', 'hourlyRate', 'desiredMarginPercent']
+const comparisonFields: (keyof FormInput)[] = ['name', 'artworkType', 'artworkTypeOther', 'technique', 'techniqueOther', 'materialsCost', 'additionalExpenses', 'estimatedHours', 'hourlyRate', 'desiredMarginPercent']
+
 function decimalString(value: number, locale: 'es-CL' | 'en-US'): string {
   return value.toLocaleString(locale, { useGrouping: false, maximumFractionDigits: 20 })
 }
@@ -62,26 +67,76 @@ function toFormInput(input: BudgetInput): FormInput {
   }
 }
 
+function canonicalValue(field: keyof FormInput, value: string | undefined): string {
+  const text = (value ?? '').trim()
+  if (!text) return ''
+
+  if (field === 'materialsCost' || field === 'hourlyRate' || field === 'additionalExpenses') {
+    const number = Number(text.replaceAll('.', '').replace(',', '.'))
+    return Number.isFinite(number) ? String(number) : text
+  }
+
+  if (field === 'estimatedHours' || field === 'desiredMarginPercent') {
+    const number = Number(text.replace(',', '.'))
+    return Number.isFinite(number) ? String(number) : text
+  }
+
+  return text
+}
+
+function formValuesEqual(current: Partial<FormInput>, baseline: Partial<FormInput>): boolean {
+  return comparisonFields.every((field) => canonicalValue(field, current[field]) === canonicalValue(field, baseline[field]))
+}
+
 export function Calculator() {
   const [result, setResult] = useState<BudgetResult | null>(null)
   const [costs, setCosts] = useState<BudgetCosts | null>(null)
   const [calculationError, setCalculationError] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingUpdatedAt, setEditingUpdatedAt] = useState<string | null>(null)
   const [saveError, setSaveError] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
-  const { budgets, error: historyError, save: persistBudget, remove: removeBudget } = useBudgetHistory()
-  const { register, handleSubmit, reset, setValue, control, formState: { errors } } = useForm<FormInput, unknown, FormOutput>({
+  const [validationSummary, setValidationSummary] = useState('')
+  const [baseline, setBaseline] = useState<FormInput>(emptyValues)
+  const [acknowledgedConflict, setAcknowledgedConflict] = useState(false)
+  const { register, handleSubmit, reset, setValue, setFocus, getValues, control, formState: { errors } } = useForm<FormInput, unknown, FormOutput>({
     resolver: zodResolver(calculatorSchema),
     defaultValues: emptyValues,
   })
   const artworkType = useWatch({ control, name: 'artworkType' })
   const technique = useWatch({ control, name: 'technique' })
+  const watchedValues = useWatch({ control })
+  const isDirty = useMemo(() => !formValuesEqual(watchedValues, baseline), [watchedValues, baseline])
+  const {
+    budgets,
+    error: historyError,
+    errorCode: historyErrorCode,
+    conflict: storageConflict,
+    save: persistBudget,
+    remove: removeBudget,
+    resolveConflict,
+    discardCorruptData,
+    backup,
+  } = useBudgetHistory({ hasUnsavedChanges: isDirty })
+
+  useEffect(() => {
+    if (!isDirty) return
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isDirty])
 
   function onSubmit(values: FormOutput) {
     try {
       setResult(calculateBudget(values))
       setCosts(values)
       setCalculationError('')
+      setValidationSummary('')
     } catch (error) {
       setResult(null)
       setCosts(null)
@@ -89,22 +144,47 @@ export function Calculator() {
     }
   }
 
+  function onInvalid(formErrors: FieldErrors<FormInput>) {
+    const firstInvalid = fieldOrder.find((name) => formErrors[name])
+    if (firstInvalid) setFocus(firstInvalid)
+    setValidationSummary('Revisa los campos marcados. Hay campos obligatorios vacíos o con un formato inválido.')
+  }
+
+  function confirmDiscardChanges(): boolean {
+    if (!isDirty) return true
+    return window.confirm('Tienes cambios sin guardar. Si continúas, se descartarán.')
+  }
+
   function onSave(values: FormOutput) {
-    const stored = persistBudget(values, editingId ?? undefined)
+    if (acknowledgedConflict && !window.confirm('Otra pestaña modificó los presupuestos guardados. Si guardas ahora, podrías sobrescribir esos cambios. ¿Continuar?')) {
+      return
+    }
+
+    const stored = persistBudget(values, editingId ?? undefined, acknowledgedConflict ? undefined : editingUpdatedAt ?? undefined)
     if (!stored.ok) {
       setSaveError(stored.error.message)
       setSaveMessage('')
       return
     }
+
     setSaveError('')
     setSaveMessage(editingId ? 'Presupuesto actualizado.' : 'Presupuesto guardado.')
+    setValidationSummary('')
+    setAcknowledgedConflict(false)
+    if (editingId) setEditingUpdatedAt(stored.data.updatedAt)
+    setBaseline(getValues())
   }
 
-  function editSavedBudget(budget: SavedBudget) {
+  function loadBudgetIntoForm(budget: SavedBudget) {
+    const values = toFormInput(budget.input)
     setEditingId(budget.id)
-    reset(toFormInput(budget.input))
+    setEditingUpdatedAt(budget.updatedAt)
+    setAcknowledgedConflict(false)
+    reset(values)
+    setBaseline(values)
     setSaveError('')
     setSaveMessage('')
+    setValidationSummary('')
     try {
       setResult(calculateBudget(budget.input))
       setCosts(budget.input)
@@ -116,29 +196,50 @@ export function Calculator() {
     }
   }
 
-  function cancelEdit() {
+  function editSavedBudget(budget: SavedBudget) {
+    if (!confirmDiscardChanges()) return
+    loadBudgetIntoForm(budget)
+    setSaveMessage('Presupuesto cargado para edición.')
+    document.getElementById('name')?.focus()
+  }
+
+  function resetEditor() {
     setEditingId(null)
+    setEditingUpdatedAt(null)
+    setAcknowledgedConflict(false)
     reset(emptyValues)
+    setBaseline(emptyValues)
     setResult(null)
     setCosts(null)
     setCalculationError('')
     setSaveError('')
     setSaveMessage('')
+    setValidationSummary('')
+  }
+
+  function cancelEdit() {
+    if (!confirmDiscardChanges()) return
+    resetEditor()
   }
 
   function loadExample() {
+    if (!confirmDiscardChanges()) return
     setEditingId(null)
+    setEditingUpdatedAt(null)
+    setAcknowledgedConflict(false)
     reset(example)
+    setBaseline(example)
     setResult(null)
     setCosts(null)
     setCalculationError('')
     setSaveError('')
     setSaveMessage('')
+    setValidationSummary('')
   }
 
   function deleteSavedBudget(id: string) {
     const removal = removeBudget(id)
-    if (removal.ok && editingId === id) cancelEdit()
+    if (removal.ok && editingId === id) resetEditor()
     return removal
   }
 
@@ -148,21 +249,51 @@ export function Calculator() {
     setCalculationError('')
     setSaveError('')
     setSaveMessage('')
+    setValidationSummary('')
   }
 
-  function field(name: FieldName, label: string, options: { type?: string; hint?: string; money?: boolean; decimal?: boolean } = {}) {
+  function handleResolveConflict(action: ConflictAction) {
+    const fresh = resolveConflict()
+    setSaveError('')
+
+    if (action === 'keep') {
+      setAcknowledgedConflict(true)
+      setSaveMessage('Se mantuvieron tus cambios locales. Revisa el historial antes de guardar.')
+      return
+    }
+
+    setAcknowledgedConflict(false)
+    const latest = editingId ? fresh.budgets.find((budget) => budget.id === editingId) : undefined
+
+    if (latest) {
+      loadBudgetIntoForm(latest)
+      setSaveMessage('Historial actualizado. Se cargó la versión más reciente del presupuesto.')
+      document.getElementById('name')?.focus()
+      return
+    }
+
+    const wasEditing = editingId !== null
+    resetEditor()
+    setSaveMessage(wasEditing ? 'El presupuesto que estabas editando ya no existe.' : 'Historial actualizado. Se descartaron los cambios locales.')
+  }
+
+  function field(name: FieldName, label: string, options: { type?: string; hint?: string; money?: boolean; decimal?: boolean; required?: boolean } = {}) {
     const error = errors[name]?.message
     const hintId = options.hint ? `${name}-hint` : undefined
     const errorId = error ? `${name}-error` : undefined
     const registration = register(name)
     return (
       <div>
-        <label htmlFor={name} className="block text-sm font-semibold">{label}</label>
+        <div className="flex flex-wrap items-baseline gap-x-1">
+          <label htmlFor={name} className="block text-sm font-semibold">{label}</label>
+          {options.required && <span aria-hidden="true" className="text-sm font-semibold text-terracotta">*</span>}
+        </div>
         {options.hint && <p id={hintId} className="mt-1 text-sm text-graphite/80">{options.hint}</p>}
         <input
           id={name}
           type={options.type ?? 'text'}
           {...(options.type === 'number' ? { min: 0, step: 'any' } : {})}
+          {...(options.required ? { required: true } : {})}
           inputMode={options.money || options.decimal || options.type === 'number' ? 'decimal' : undefined}
           {...registration}
           onFocus={options.money ? (event) => {
@@ -175,6 +306,7 @@ export function Calculator() {
             setValue(name, formatted, { shouldValidate: true })
           } : registration.onBlur}
           aria-invalid={Boolean(error)}
+          aria-required={options.required || undefined}
           aria-describedby={[hintId, errorId].filter(Boolean).join(' ') || undefined}
           className={inputClass}
         />
@@ -189,12 +321,17 @@ export function Calculator() {
         <div className="mb-8 border-b-2 border-graphite pb-5">
           <p className="font-mono text-xs font-bold tracking-[0.12em] uppercase">01 / Tu obra</p>
           <h2 id="calculator-title" className="mt-3 font-serif text-3xl font-bold">Calcula tu precio</h2>
-          <p className="mt-3 text-sm leading-relaxed">El tipo de obra y la técnica son opcionales; los demás campos son obligatorios. Los montos en pesos chilenos se formatean al salir del campo.</p>
+          <p className="mt-3 text-sm leading-relaxed">El tipo de obra y la técnica son opcionales; los demás campos son obligatorios y se marcan con *. Los montos en pesos chilenos se formatean al salir del campo.</p>
         </div>
-        <form noValidate onSubmit={handleSubmit(onSubmit, clearResults)} onChange={clearResults} className="space-y-6">
+        <form noValidate onSubmit={handleSubmit(onSubmit, onInvalid)} onChange={clearResults} className="space-y-6">
+          {validationSummary && (
+            <div role="alert" className="border-2 border-error bg-white p-4">
+              <p className="text-sm font-semibold text-error">{validationSummary}</p>
+            </div>
+          )}
           <fieldset className="space-y-6">
             <legend className="mb-4 w-full border-b-2 border-graphite pb-3 font-mono text-sm font-bold uppercase">Información de la obra</legend>
-            {field('name', 'Nombre de la obra o encargo')}
+            {field('name', 'Nombre de la obra o encargo', { required: true })}
             <div>
               <label htmlFor="artworkType" className="block text-sm font-semibold">Tipo de obra (opcional)</label>
               <select id="artworkType" {...register('artworkType')} className={inputClass}>
@@ -202,7 +339,7 @@ export function Calculator() {
                 {ARTWORK_TYPES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
               </select>
             </div>
-            {artworkType === 'other' && field('artworkTypeOther', 'Especifica el tipo de obra')}
+            {artworkType === 'other' && field('artworkTypeOther', 'Especifica el tipo de obra', { required: true })}
             <div>
               <label htmlFor="technique" className="block text-sm font-semibold">Técnica principal (opcional)</label>
               <select id="technique" {...register('technique')} className={inputClass}>
@@ -210,21 +347,21 @@ export function Calculator() {
                 {TECHNIQUES.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
               </select>
             </div>
-            {technique === 'other' && field('techniqueOther', 'Especifica la técnica principal')}
+            {technique === 'other' && field('techniqueOther', 'Especifica la técnica principal', { required: true })}
           </fieldset>
           <fieldset className="space-y-6 pt-2">
             <legend className="mb-4 w-full border-b-2 border-graphite pb-3 font-mono text-sm font-bold uppercase">Costos de producción</legend>
             <div className="grid gap-6 sm:grid-cols-2">
-              {field('materialsCost', 'Costo de materiales (CLP)', { money: true })}
-              {field('additionalExpenses', 'Gastos adicionales (CLP)', { money: true })}
-              {field('estimatedHours', 'Horas estimadas', { decimal: true, hint: 'Puedes usar coma o punto para fracciones: 1,5 o 1.5.' })}
-              {field('hourlyRate', 'Valor por hora (CLP)', { money: true })}
+              {field('materialsCost', 'Costo de materiales (CLP)', { money: true, required: true })}
+              {field('additionalExpenses', 'Gastos adicionales (CLP)', { money: true, required: true })}
+              {field('estimatedHours', 'Horas estimadas', { decimal: true, required: true, hint: 'Puedes usar coma o punto para fracciones: 1,5 o 1.5.' })}
+              {field('hourlyRate', 'Valor por hora (CLP)', { money: true, required: true })}
             </div>
-            {field('desiredMarginPercent', 'Margen deseado (%)', { type: 'number', hint: `Entre 0 y ${MAX_DESIRED_MARGIN_PERCENT} % del precio de venta.` })}
+            {field('desiredMarginPercent', 'Margen deseado (%)', { type: 'number', required: true, hint: `Entre 0 y ${MAX_DESIRED_MARGIN_PERCENT} % del precio de venta.` })}
           </fieldset>
           {calculationError && <p role="alert" className="text-sm font-semibold text-error">{calculationError}</p>}
           {saveError && <p role="alert" className="text-sm font-semibold text-error">{saveError}</p>}
-          {saveMessage && <p role="status" className="text-sm font-semibold">{saveMessage}</p>}
+          <p role="status" aria-live="polite" className={saveMessage ? 'text-sm font-semibold' : 'sr-only'}>{saveMessage}</p>
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <button type="submit" className="border-2 border-graphite bg-accent px-6 py-4 font-mono text-sm font-bold text-graphite hover:bg-accent-hover focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent">
               Calcular precio sugerido
@@ -232,7 +369,7 @@ export function Calculator() {
             <button type="button" onClick={loadExample} className="border-2 border-graphite bg-white px-6 py-4 font-mono text-sm font-bold text-graphite hover:bg-ivory focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent">
               Cargar ejemplo
             </button>
-            <button type="button" onClick={handleSubmit(onSave, clearResults)} className="border-2 border-graphite bg-white px-6 py-4 font-mono text-sm font-bold text-graphite hover:bg-ivory focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent">
+            <button type="button" onClick={handleSubmit(onSave, onInvalid)} className="border-2 border-graphite bg-white px-6 py-4 font-mono text-sm font-bold text-graphite hover:bg-ivory focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent">
               {editingId ? 'Actualizar presupuesto' : 'Guardar presupuesto'}
             </button>
             {editingId && <button type="button" onClick={cancelEdit} className="border-2 border-graphite bg-white px-6 py-4 font-mono text-sm font-bold text-graphite hover:bg-ivory focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent">
@@ -277,9 +414,14 @@ export function Calculator() {
         <History
           budgets={budgets}
           error={historyError}
+          errorCode={historyErrorCode}
           editingId={editingId}
+          externalConflict={storageConflict}
           onEdit={editSavedBudget}
           onDelete={deleteSavedBudget}
+          onDownloadBackup={backup}
+          onDiscardCorruptData={discardCorruptData}
+          onResolveConflict={handleResolveConflict}
         />
       </div>
     </section>

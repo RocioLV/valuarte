@@ -24,6 +24,25 @@ describe('Calculadora', () => {
     expect(screen.getByText(/completa los datos/i)).toBeInTheDocument()
   })
 
+  it('identifica los campos obligatorios', () => {
+    render(<Calculator />)
+    for (const label of ['Nombre de la obra o encargo', 'Costo de materiales (CLP)', 'Gastos adicionales (CLP)', 'Horas estimadas', 'Valor por hora (CLP)', 'Margen deseado (%)']) {
+      expect(screen.getByLabelText(label)).toHaveAttribute('aria-required', 'true')
+      expect(screen.getByLabelText(label)).toBeRequired()
+    }
+    expect(screen.getByLabelText('Tipo de obra (opcional)')).not.toHaveAttribute('aria-required')
+    expect(screen.getByLabelText('Técnica principal (opcional)')).not.toHaveAttribute('aria-required')
+  })
+
+  it('enfoca el primer campo inválido y anuncia el resumen de errores', async () => {
+    const user = userEvent.setup()
+    render(<Calculator />)
+    await user.click(screen.getByRole('button', { name: /calcular precio sugerido/i }))
+
+    expect(screen.getByLabelText('Nombre de la obra o encargo')).toHaveFocus()
+    expect(screen.getByRole('alert')).toHaveTextContent(/revisa los campos marcados/i)
+  })
+
   it('asocia errores accesibles a los campos vacíos y rechaza valores fuera de rango', async () => {
     const user = userEvent.setup()
     render(<Calculator />)

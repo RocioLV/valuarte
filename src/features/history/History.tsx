@@ -2,15 +2,23 @@ import { useEffect, useRef, useState } from 'react'
 import { calculateBudget } from '../../domain/calculations'
 import { ARTWORK_TYPES, TECHNIQUES } from '../../domain/classification'
 import type { BudgetInput, SavedBudget } from '../../domain/types'
-import type { StorageResult } from '../../lib/budgetStorage'
+import type { BudgetBackup, BudgetStorageErrorCode, StorageResult } from '../../lib/budgetStorage'
+import { downloadTextFile } from '../../lib/download'
 import { currency } from '../../lib/money'
+
+type ConflictAction = 'reload' | 'keep'
 
 interface HistoryProps {
   budgets: SavedBudget[]
   error: string | null
+  errorCode: BudgetStorageErrorCode | null
   editingId: string | null
+  externalConflict: boolean
   onEdit: (budget: SavedBudget) => void
   onDelete: (id: string) => StorageResult<void>
+  onDownloadBackup: () => StorageResult<BudgetBackup>
+  onDiscardCorruptData: () => StorageResult<void>
+  onResolveConflict: (action: ConflictAction) => void
 }
 
 const dateFormatter = new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium' })
@@ -38,15 +46,34 @@ function suggestedPrice(input: BudgetInput): string {
   }
 }
 
-export function History({ budgets, error, editingId, onEdit, onDelete }: HistoryProps) {
+export function History({
+  budgets,
+  error,
+  errorCode,
+  editingId,
+  externalConflict,
+  onEdit,
+  onDelete,
+  onDownloadBackup,
+  onDiscardCorruptData,
+  onResolveConflict,
+}: HistoryProps) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
+  const [confirmingRecovery, setConfirmingRecovery] = useState(false)
   const [actionError, setActionError] = useState('')
+  const [recoveryError, setRecoveryError] = useState('')
+  const [recoveryMessage, setRecoveryMessage] = useState('')
   const confirmButtonRef = useRef<HTMLButtonElement>(null)
+  const recoveryConfirmRef = useRef<HTMLButtonElement>(null)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
     if (confirmingId) confirmButtonRef.current?.focus()
   }, [confirmingId])
+
+  useEffect(() => {
+    if (confirmingRecovery) recoveryConfirmRef.current?.focus()
+  }, [confirmingRecovery])
 
   function closeConfirmation(id: string) {
     setConfirmingId(null)
@@ -71,6 +98,43 @@ export function History({ budgets, error, editingId, onEdit, onDelete }: History
     onEdit(budget)
   }
 
+  function downloadBackup() {
+    const backup = onDownloadBackup()
+    if (!backup.ok) {
+      setRecoveryError(backup.error.message)
+      setRecoveryMessage('')
+      return
+    }
+
+    if (!downloadTextFile(backup.data.filename, backup.data.content)) {
+      setRecoveryError('El navegador no permitió descargar el respaldo. Inténtalo de nuevo.')
+      setRecoveryMessage('')
+      return
+    }
+
+    setRecoveryError('')
+    setRecoveryMessage('Respaldo descargado. Ya puedes eliminar los datos dañados.')
+  }
+
+  function closeRecoveryConfirmation() {
+    setConfirmingRecovery(false)
+    setRecoveryError('')
+    document.getElementById('discard-corrupt-data')?.focus()
+  }
+
+  function confirmDiscardCorruptData() {
+    const result = onDiscardCorruptData()
+    if (!result.ok) {
+      setRecoveryError(result.error.message)
+      return
+    }
+
+    setConfirmingRecovery(false)
+    setRecoveryError('')
+    setRecoveryMessage('Datos dañados eliminados. La aplicación ya puede guardar presupuestos.')
+    headingRef.current?.focus()
+  }
+
   return (
     <section aria-labelledby="history-title" className="border-2 border-graphite bg-white p-5 sm:p-8">
       <div className="mb-6 border-b-2 border-graphite pb-5">
@@ -81,7 +145,69 @@ export function History({ budgets, error, editingId, onEdit, onDelete }: History
         </div>
       </div>
 
-      {error ? (
+      <p role="status" aria-live="polite" className={recoveryMessage ? 'mb-4 border-2 border-graphite bg-ivory p-3 text-sm font-semibold' : 'sr-only'}>{recoveryMessage}</p>
+
+      {externalConflict && (
+        <div role="alert" className="mb-6 border-2 border-error bg-white p-4">
+          <p className="text-sm font-semibold text-error">Se detectaron cambios guardados desde otra pestaña mientras tenías cambios sin guardar.</p>
+          <p className="mt-2 text-sm leading-relaxed">Elige cómo continuar. Si mantienes tus cambios, se pedirá confirmación antes de sobrescribir la versión más reciente.</p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <button type="button" onClick={() => onResolveConflict('reload')} className={dangerButton}>
+              Descartar mis cambios y recargar
+            </button>
+            <button type="button" onClick={() => onResolveConflict('keep')} className={secondaryButton}>
+              Mantener mis cambios
+            </button>
+          </div>
+        </div>
+      )}
+
+      {errorCode === 'invalid' ? (
+        <div className="border-2 border-error bg-white p-4 sm:p-5">
+          <p role="alert" className="text-sm font-semibold text-error">{error}</p>
+          <p className="mt-3 text-sm leading-relaxed">Puedes descargar una copia del contenido original antes de eliminarlo. La aplicación no modificará ni borrará estos datos automáticamente.</p>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <button type="button" onClick={downloadBackup} className={secondaryButton}>
+              Descargar respaldo
+            </button>
+            <button
+              type="button"
+              id="discard-corrupt-data"
+              onClick={() => { setRecoveryError(''); setConfirmingRecovery(true) }}
+              aria-expanded={confirmingRecovery}
+              aria-controls={confirmingRecovery ? 'discard-corrupt-confirmation' : undefined}
+              className={secondaryButton}
+            >
+              Borrar datos dañados
+            </button>
+          </div>
+          {confirmingRecovery && (
+            <div
+              id="discard-corrupt-confirmation"
+              role="group"
+              aria-label="Confirmar eliminación de datos dañados"
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault()
+                  closeRecoveryConfirmation()
+                }
+              }}
+              className="mt-4 border-2 border-error bg-white p-4"
+            >
+              <p className="text-sm font-semibold">¿Eliminar permanentemente los datos dañados? Descarga un respaldo si lo necesitas; esta acción no se puede deshacer.</p>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                <button ref={recoveryConfirmRef} type="button" onClick={confirmDiscardCorruptData} className={dangerButton}>
+                  Sí, borrar datos
+                </button>
+                <button type="button" onClick={closeRecoveryConfirmation} className={secondaryButton}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+          {recoveryError && <p role="alert" className="mt-3 text-sm font-semibold text-error">{recoveryError}</p>}
+        </div>
+      ) : error ? (
         <p role="alert" className="border-2 border-error bg-white p-4 text-sm font-semibold text-error">{error}</p>
       ) : budgets.length === 0 ? (
         <div className="border-2 border-dashed border-graphite/50 bg-ivory p-6">

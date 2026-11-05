@@ -8,9 +8,10 @@ export const BUDGETS_STORAGE_KEY = 'valuarte.budgets.v1'
 export interface StorageLike {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
+  removeItem(key: string): void
 }
 
-export type BudgetStorageErrorCode = 'unavailable' | 'invalid' | 'invalid-input' | 'quota' | 'not-found' | 'unknown'
+export type BudgetStorageErrorCode = 'unavailable' | 'invalid' | 'invalid-input' | 'quota' | 'not-found' | 'conflict' | 'empty' | 'unknown'
 
 export interface BudgetStorageError {
   code: BudgetStorageErrorCode
@@ -18,6 +19,11 @@ export interface BudgetStorageError {
 }
 
 export type StorageResult<T> = { ok: true; data: T } | { ok: false; error: BudgetStorageError }
+
+export interface BudgetBackup {
+  filename: string
+  content: string
+}
 
 const budgetInputSchema = z.object({
   name: z.string().trim().min(1),
@@ -60,6 +66,8 @@ const messages = {
   'invalid-input': 'El presupuesto contiene datos inválidos y no se puede guardar.',
   quota: 'No hay espacio suficiente en LocalStorage. Elimina algún presupuesto o libera espacio e inténtalo de nuevo.',
   'not-found': 'El presupuesto ya no existe. Actualiza el historial e inténtalo de nuevo.',
+  conflict: 'El presupuesto cambió en otra pestaña. Recarga el historial e inténtalo de nuevo.',
+  empty: 'No hay datos guardados para respaldar.',
   unknown: 'No fue posible acceder a LocalStorage. Inténtalo de nuevo.',
 } as const
 
@@ -175,7 +183,7 @@ export function createBudget(input: BudgetInput, storage?: StorageLike): Storage
   return written.ok ? { ok: true, data: budget } : written
 }
 
-export function updateBudget(id: string, input: BudgetInput, storage?: StorageLike): StorageResult<SavedBudget> {
+export function updateBudget(id: string, input: BudgetInput, storage?: StorageLike, expectedUpdatedAt?: string): StorageResult<SavedBudget> {
   const validated = budgetInputSchema.safeParse(input)
   if (!validated.success) return failure('invalid-input')
 
@@ -184,6 +192,7 @@ export function updateBudget(id: string, input: BudgetInput, storage?: StorageLi
 
   const existing = current.data.find((budget) => budget.id === id)
   if (!existing) return failure('not-found')
+  if (expectedUpdatedAt !== undefined && existing.updatedAt !== expectedUpdatedAt) return failure('conflict')
 
   const budget: SavedBudget = {
     ...existing,
@@ -204,4 +213,39 @@ export function deleteBudget(id: string, storage?: StorageLike): StorageResult<v
   if (next.length === current.data.length) return failure('not-found')
 
   return writeStoredBudgets(next, storage)
+}
+
+function backupFilename(): string {
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  return `valuarte-presupuestos-${stamp}.txt`
+}
+
+export function getBudgetBackup(storage?: StorageLike): StorageResult<BudgetBackup> {
+  const store = resolveStorage(storage)
+  if (!store) return failure('unavailable')
+
+  let raw: string | null
+  try {
+    raw = store.getItem(BUDGETS_STORAGE_KEY)
+  } catch {
+    return failure('unavailable')
+  }
+
+  if (raw === null) return failure('empty')
+
+  return { ok: true, data: { filename: backupFilename(), content: raw } }
+}
+
+/** Elimina datos solo mediante una acción explícita del usuario. */
+export function discardBudgetData(storage?: StorageLike): StorageResult<void> {
+  const store = resolveStorage(storage)
+  if (!store) return failure('unavailable')
+
+  try {
+    store.removeItem(BUDGETS_STORAGE_KEY)
+    return { ok: true, data: undefined }
+  } catch (error) {
+    if (isSecurityError(error)) return failure('unavailable')
+    return failure('unknown')
+  }
 }

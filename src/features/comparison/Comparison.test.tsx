@@ -50,6 +50,21 @@ describe('Comparador de escenarios', () => {
     expect(screen.queryByRole('region', { name: 'Escenario A' })).not.toBeInTheDocument()
   })
 
+  it('identifica los precios obligatorios y enfoca el primero inválido', async () => {
+    const user = userEvent.setup()
+    render(<Comparison costs={costs} totalCost={50_000} />)
+    const first = screen.getByLabelText('Precio de venta A (CLP)')
+    const second = screen.getByLabelText('Precio de venta B (CLP)')
+    expect(first).toBeRequired()
+    expect(second).toBeRequired()
+    expect(first).toHaveAttribute('aria-required', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'Comparar escenarios' }))
+
+    expect(first).toHaveFocus()
+    expect(screen.getByRole('alert')).toHaveTextContent(/revisa los precios marcados/i)
+  })
+
   it('permite comparar usando el teclado', async () => {
     const user = userEvent.setup()
     render(<Comparison costs={costs} totalCost={50_000} />)

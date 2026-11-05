@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import type { FieldErrors } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { compareScenarios } from '../../domain/calculations'
@@ -34,7 +35,8 @@ export function Comparison({ costs, totalCost }: ComparisonProps) {
 function ComparisonForm({ costs, totalCost }: { costs: BudgetCosts; totalCost: number }) {
   const [comparison, setComparison] = useState<ScenarioComparison | null>(null)
   const [calculationError, setCalculationError] = useState('')
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<FormInput, unknown, FormOutput>({
+  const [validationSummary, setValidationSummary] = useState('')
+  const { register, handleSubmit, setValue, setFocus, formState: { errors } } = useForm<FormInput, unknown, FormOutput>({
     resolver: zodResolver(schema),
     defaultValues: { firstPrice: '', secondPrice: '' },
   })
@@ -43,10 +45,17 @@ function ComparisonForm({ costs, totalCost }: { costs: BudgetCosts; totalCost: n
     try {
       setComparison(compareScenarios(costs, values.firstPrice, values.secondPrice))
       setCalculationError('')
+      setValidationSummary('')
     } catch (error) {
       setComparison(null)
       setCalculationError(error instanceof RangeError ? error.message : 'No fue posible comparar los escenarios. Revisa los datos e inténtalo de nuevo.')
     }
+  }
+
+  function onInvalid(formErrors: FieldErrors<FormInput>) {
+    const firstInvalid = (['firstPrice', 'secondPrice'] as const).find((name) => formErrors[name])
+    if (firstInvalid) setFocus(firstInvalid)
+    setValidationSummary('Revisa los precios marcados. Ambos son obligatorios y deben tener un formato válido.')
   }
 
   function priceField(name: keyof FormInput, label: string) {
@@ -54,11 +63,16 @@ function ComparisonForm({ costs, totalCost }: { costs: BudgetCosts; totalCost: n
     const error = errors[name]?.message
     return (
       <div>
-        <label htmlFor={name} className="block text-sm font-semibold">{label}</label>
+        <div className="flex flex-wrap items-baseline gap-x-1">
+          <label htmlFor={name} className="block text-sm font-semibold">{label}</label>
+          <span aria-hidden="true" className="text-sm font-semibold text-terracotta">*</span>
+        </div>
         <input
           id={name}
           type="text"
           inputMode="decimal"
+          required
+          aria-required="true"
           {...registration}
           onFocus={(event) => setValue(name, unformatMoneyInput(event.currentTarget.value))}
           onBlur={(event) => {
@@ -78,8 +92,13 @@ function ComparisonForm({ costs, totalCost }: { costs: BudgetCosts; totalCost: n
 
   return (
     <>
-      <p className="mt-4 text-sm leading-relaxed">Compara dos ingresos usando los costos actuales, incluida tu remuneración. Los montos se formatean al salir del campo.</p>
-      <form noValidate onSubmit={handleSubmit(onSubmit, () => { setComparison(null); setCalculationError('') })} onChange={() => { setComparison(null); setCalculationError('') }} className="mt-6 space-y-5">
+      <p className="mt-4 text-sm leading-relaxed">Compara dos ingresos usando los costos actuales, incluida tu remuneración. Los campos marcados con * son obligatorios y los montos se formatean al salir del campo.</p>
+      <form noValidate onSubmit={handleSubmit(onSubmit, onInvalid)} onChange={() => { setComparison(null); setCalculationError(''); setValidationSummary('') }} className="mt-6 space-y-5">
+        {validationSummary && (
+          <div role="alert" className="border-2 border-error bg-white p-4">
+            <p className="text-sm font-semibold text-error">{validationSummary}</p>
+          </div>
+        )}
         <div className="grid gap-5 sm:grid-cols-2">
           {priceField('firstPrice', 'Precio de venta A (CLP)')}
           {priceField('secondPrice', 'Precio de venta B (CLP)')}

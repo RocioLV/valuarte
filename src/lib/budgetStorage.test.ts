@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { BudgetInput } from '../domain/types'
-import { BUDGETS_STORAGE_KEY, createBudget, deleteBudget, listBudgets, updateBudget } from './budgetStorage'
+import { BUDGETS_STORAGE_KEY, createBudget, deleteBudget, discardBudgetData, getBudgetBackup, listBudgets, updateBudget } from './budgetStorage'
 import type { StorageLike } from './budgetStorage'
 
 const baseInput: BudgetInput = {
@@ -20,6 +20,7 @@ function memoryStorage(): StorageLike & { values: Map<string, string> } {
     values,
     getItem: (key) => values.get(key) ?? null,
     setItem: (key, value) => { values.set(key, value) },
+    removeItem: (key) => { values.delete(key) },
   }
 }
 
@@ -123,6 +124,7 @@ describe('almacenamiento de presupuestos', () => {
     const blocked: StorageLike = {
       getItem: () => { throw new DOMException('Bloqueado', 'SecurityError') },
       setItem: () => undefined,
+      removeItem: () => undefined,
     }
     const unavailable = listBudgets(blocked)
     expect(unavailable.ok).toBe(false)
@@ -131,6 +133,7 @@ describe('almacenamiento de presupuestos', () => {
     const full: StorageLike = {
       getItem: () => null,
       setItem: () => { throw new DOMException('Sin espacio', 'QuotaExceededError') },
+      removeItem: () => undefined,
     }
     const fullResult = createBudget(baseInput, full)
     expect(fullResult.ok).toBe(false)
@@ -144,5 +147,95 @@ describe('almacenamiento de presupuestos', () => {
     const read = listBudgets(storage)
     expect(read.ok).toBe(false)
     if (!read.ok) expect(read.error.code).toBe('invalid')
+  })
+
+  it('permite respaldar y descartar explícitamente datos dañados', () => {
+    const storage = memoryStorage()
+    const corrupt = '{"datos":'
+    storage.setItem(BUDGETS_STORAGE_KEY, corrupt)
+
+    const backup = getBudgetBackup(storage)
+    expect(backup.ok).toBe(true)
+    if (backup.ok) {
+      expect(backup.data.content).toBe(corrupt)
+      expect(backup.data.filename).toMatch(/^valuarte-presupuestos-.*\.txt$/)
+    }
+
+    expect(discardBudgetData(storage).ok).toBe(true)
+    expect(storage.getItem(BUDGETS_STORAGE_KEY)).toBeNull()
+
+    const after = listBudgets(storage)
+    expect(after.ok).toBe(true)
+    if (after.ok) expect(after.data).toEqual([])
+    expect(createBudget(baseInput, storage).ok).toBe(true)
+  })
+
+  it('no permite respaldar cuando no hay datos guardados', () => {
+    const backup = getBudgetBackup(memoryStorage())
+    expect(backup.ok).toBe(false)
+    if (!backup.ok) expect(backup.error.code).toBe('empty')
+  })
+
+  it('preserva las ediciones de presupuestos distintos realizadas desde dos pestañas', () => {
+    const storage = memoryStorage()
+    const first = createBudget({ ...baseInput, name: 'Primera obra' }, storage)
+    const second = createBudget({ ...baseInput, name: 'Segunda obra' }, storage)
+    if (!first.ok || !second.ok) throw new Error('No se pudo preparar la prueba.')
+
+    const firstVersion = first.data.updatedAt
+    const secondVersion = second.data.updatedAt
+
+    const firstEdit = updateBudget(first.data.id, { ...first.data.input, name: 'Primera editada' }, storage, firstVersion)
+    const secondEdit = updateBudget(second.data.id, { ...second.data.input, name: 'Segunda editada' }, storage, secondVersion)
+
+    expect(firstEdit.ok).toBe(true)
+    expect(secondEdit.ok).toBe(true)
+
+    const listed = listBudgets(storage)
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(listed.data).toHaveLength(2)
+    expect(listed.data.find((budget) => budget.id === first.data.id)?.input.name).toBe('Primera editada')
+    expect(listed.data.find((budget) => budget.id === second.data.id)?.input.name).toBe('Segunda editada')
+  })
+
+  it('conserva registros agregados por otra pestaña al actualizar un presupuesto', () => {
+    const storage = memoryStorage()
+    const first = createBudget({ ...baseInput, name: 'Paisaje' }, storage)
+    if (!first.ok) throw new Error('No se pudo preparar la prueba.')
+
+    const external = createBudget({ ...baseInput, name: 'Agregado externo' }, storage)
+    if (!external.ok) throw new Error('No se pudo preparar la prueba.')
+
+    const updated = updateBudget(first.data.id, { ...first.data.input, name: 'Paisaje editado' }, storage, first.data.updatedAt)
+    expect(updated.ok).toBe(true)
+
+    const listed = listBudgets(storage)
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(listed.data).toHaveLength(2)
+    expect(listed.data.find((budget) => budget.id === first.data.id)?.input.name).toBe('Paisaje editado')
+    expect(listed.data.find((budget) => budget.id === external.data.id)?.input).toEqual(external.data.input)
+  })
+
+  it('rechaza actualizaciones basadas en una versión desactualizada', () => {
+    const storage = memoryStorage()
+    const created = createBudget(baseInput, storage)
+    if (!created.ok) throw new Error('No se pudo preparar la prueba.')
+
+    const updated = updateBudget(created.data.id, { ...baseInput, name: 'Primera edición' }, storage, created.data.updatedAt)
+    expect(updated.ok).toBe(true)
+    if (!updated.ok) return
+
+    const stale = updateBudget(created.data.id, { ...baseInput, name: 'Edición desactualizada' }, storage, created.data.updatedAt)
+    expect(stale.ok).toBe(false)
+    if (!stale.ok) expect(stale.error.code).toBe('conflict')
+
+    const afterConflict = listBudgets(storage)
+    if (afterConflict.ok) expect(afterConflict.data[0]?.input.name).toBe('Primera edición')
+
+    const fresh = updateBudget(created.data.id, { ...baseInput, name: 'Segunda edición' }, storage, updated.data.updatedAt)
+    expect(fresh.ok).toBe(true)
+    if (fresh.ok) expect(fresh.data.input.name).toBe('Segunda edición')
   })
 })
