@@ -8,12 +8,28 @@
   --color-accent: #dbef53;
   --color-accent-hover: #c5d943;
   --color-error: #a02d1b;
+
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 body {
   margin: 0;
   min-width: 320px;
-  font-family: system-ui, sans-serif;
+  font-family: var(--font-sans);
+}
+
+select,
+select option {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+select option {
+  background-color: #ffffff;
+  color: var(--color-graphite);
 }
 
 ::selection {

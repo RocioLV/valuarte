@@ -285,7 +285,7 @@ export function Calculator() {
     return (
       <div>
         <div className="flex flex-wrap items-baseline gap-x-1">
-          <label htmlFor={name} className="block text-sm font-semibold">{label}</label>
+          <label htmlFor={name} className="block text-sm font-semibold break-words">{label}</label>
           {options.required && <span aria-hidden="true" className="text-sm font-semibold text-terracotta">*</span>}
         </div>
         {options.hint && <p id={hintId} className="mt-1 text-sm text-graphite/80">{options.hint}</p>}
@@ -318,10 +318,10 @@ export function Calculator() {
   return (
     <section aria-labelledby="calculator-title" className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr] lg:gap-6">
       <div className="min-w-0 border-2 border-graphite bg-white p-5 sm:p-8">
-        <div className="mb-8 border-b-2 border-graphite pb-5">
+        <div className="mb-6 border-b-2 border-graphite pb-5">
           <p className="font-mono text-xs font-bold tracking-[0.12em] uppercase">01 / Tu obra</p>
-          <h2 id="calculator-title" className="mt-3 font-serif text-3xl font-bold">Calcula tu precio</h2>
-          <p className="mt-3 text-sm leading-relaxed">El tipo de obra y la técnica son opcionales; los demás campos son obligatorios y se marcan con *. Los montos en pesos chilenos se formatean al salir del campo.</p>
+          <h2 id="calculator-title" className="mt-3 font-serif text-3xl leading-tight font-bold tracking-tight">Calcula tu precio</h2>
+          <p className="mt-3 text-base leading-relaxed text-graphite/90">El tipo de obra y la técnica son opcionales; los demás campos son obligatorios y se marcan con *. Los montos en pesos chilenos se formatean al salir del campo.</p>
         </div>
         <form noValidate onSubmit={handleSubmit(onSubmit, onInvalid)} onChange={clearResults} className="space-y-6">
           {validationSummary && (
@@ -330,7 +330,7 @@ export function Calculator() {
             </div>
           )}
           <fieldset className="space-y-6">
-            <legend className="mb-4 w-full border-b-2 border-graphite pb-3 font-mono text-sm font-bold uppercase">Información de la obra</legend>
+            <legend className="mb-4 w-full border-b-2 border-graphite pb-3 font-mono text-sm font-bold tracking-[0.08em] uppercase">Información de la obra</legend>
             {field('name', 'Nombre de la obra o encargo', { required: true })}
             <div>
               <label htmlFor="artworkType" className="block text-sm font-semibold">Tipo de obra (opcional)</label>
@@ -350,7 +350,7 @@ export function Calculator() {
             {technique === 'other' && field('techniqueOther', 'Especifica la técnica principal', { required: true })}
           </fieldset>
           <fieldset className="space-y-6 pt-2">
-            <legend className="mb-4 w-full border-b-2 border-graphite pb-3 font-mono text-sm font-bold uppercase">Costos de producción</legend>
+            <legend className="mb-4 w-full border-b-2 border-graphite pb-3 font-mono text-sm font-bold tracking-[0.08em] uppercase">Costos de producción</legend>
             <div className="grid gap-6 sm:grid-cols-2">
               {field('materialsCost', 'Costo de materiales (CLP)', { money: true, required: true })}
               {field('additionalExpenses', 'Gastos adicionales (CLP)', { money: true, required: true })}
@@ -380,16 +380,19 @@ export function Calculator() {
       </div>
       <aside aria-labelledby="result-title" className="h-fit min-w-0 border-2 border-graphite bg-ivory p-5 sm:p-8">
         <p className="font-mono text-xs font-bold tracking-[0.12em] uppercase">02 / Tu estimación</p>
-        <h2 id="result-title" className="mt-3 font-serif text-3xl font-bold">El valor de tu trabajo</h2>
+        <h2 id="result-title" className="mt-3 font-serif text-3xl leading-tight font-bold tracking-tight">El valor de tu trabajo</h2>
+        <p className="mt-3 text-base leading-relaxed text-graphite/90">
+          {result ? 'Este es el desglose económico de tu estimación.' : 'Completa los datos y calcula para conocer el precio sugerido y el detalle de tu estimación.'}
+        </p>
         <div aria-live="polite" aria-atomic="true">
           {result ? (
-            <div className="mt-7">
+            <div className="mt-6">
               <div className="border-2 border-graphite bg-accent p-5">
-                <p className="text-sm font-semibold">Precio sugerido</p>
-                <p className="mt-2 font-serif text-4xl break-words sm:text-5xl">{currency.format(result.suggestedPrice)}</p>
+                <p className="font-mono text-xs font-bold tracking-[0.08em] uppercase">Precio sugerido</p>
+                <p className="mt-2 font-serif text-4xl leading-tight break-words tabular-nums sm:text-5xl">{currency.format(result.suggestedPrice)}</p>
                 <p className="mt-2 text-sm">Redondeado hacia arriba al peso.</p>
               </div>
-              <h3 className="mt-7 font-serif text-xl">Desglose económico</h3>
+              <h3 className="mt-6 font-serif text-xl leading-snug font-bold">Desglose económico</h3>
               <dl className="mt-4 space-y-3 border-t-2 border-graphite pt-5 text-sm">
                 {([
                   ['Materiales', currency.format(result.materialsCost)],
@@ -399,18 +402,18 @@ export function Calculator() {
                   ['Excedente estimado', currency.format(result.estimatedSurplus)],
                   ['Margen efectivo', result.marginPercent === null ? 'No disponible' : `${percentage.format(result.marginPercent)} %`],
                 ] as const).map(([label, value]) => (
-                  <div key={label} className="flex flex-wrap justify-between gap-x-4 gap-y-1"><dt>{label}</dt><dd className="font-semibold">{value}</dd></div>
+                  <div key={label} className="flex flex-wrap justify-between gap-x-4 gap-y-1"><dt className="min-w-0 break-words">{label}</dt><dd className="min-w-0 font-semibold break-words tabular-nums">{value}</dd></div>
                 ))}
               </dl>
               <p className="mt-6 border-t-2 border-graphite pt-5 text-sm leading-relaxed">El excedente queda después de cubrir los costos y remunerar tu trabajo. Es una estimación sin impuestos ni costos no ingresados. Los montos se muestran redondeados a pesos.</p>
             </div>
-          ) : <p className="mt-7 text-sm leading-relaxed">Completa los datos y calcula para conocer el precio sugerido y el detalle de tu estimación.</p>}
+          ) : null}
         </div>
       </aside>
-      <div className="lg:col-span-2">
+      <div className="min-w-0 lg:col-span-2">
         <Comparison costs={result ? costs : null} totalCost={result?.totalCost ?? null} />
       </div>
-      <div className="lg:col-span-2">
+      <div className="min-w-0 lg:col-span-2">
         <History
           budgets={budgets}
           error={historyError}

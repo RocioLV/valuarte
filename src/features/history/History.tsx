@@ -23,8 +23,8 @@ interface HistoryProps {
 
 const dateFormatter = new Intl.DateTimeFormat('es-CL', { dateStyle: 'medium' })
 
-const secondaryButton = 'border-2 border-graphite bg-white px-4 py-2 font-mono text-xs font-bold text-graphite hover:bg-ivory focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent'
-const dangerButton = 'border-2 border-error bg-white px-4 py-2 font-mono text-xs font-bold text-error hover:bg-error hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-error focus-visible:ring-4 focus-visible:ring-accent'
+const secondaryButton = 'border-2 border-graphite bg-white px-4 py-2 font-mono text-sm font-bold text-graphite hover:bg-ivory focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-graphite focus-visible:ring-4 focus-visible:ring-accent'
+const dangerButton = 'border-2 border-error bg-white px-4 py-2 font-mono text-sm font-bold text-error hover:bg-error hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-error focus-visible:ring-4 focus-visible:ring-accent'
 
 function artworkTypeLabel(input: BudgetInput): string {
   if (!input.artworkType) return 'Tipo sin especificar'
@@ -136,12 +136,12 @@ export function History({
   }
 
   return (
-    <section aria-labelledby="history-title" className="border-2 border-graphite bg-white p-5 sm:p-8">
+    <section aria-labelledby="history-title" className="min-w-0 border-2 border-graphite bg-white p-5 sm:p-8">
       <div className="mb-6 border-b-2 border-graphite pb-5">
-        <p className="font-mono text-xs font-bold tracking-[0.12em] uppercase">03 / Tu historial</p>
+        <p className="font-mono text-xs font-bold tracking-[0.12em] uppercase">04 / Tu historial</p>
         <div className="mt-3 flex flex-wrap items-baseline justify-between gap-3">
-          <h2 ref={headingRef} tabIndex={-1} id="history-title" className="font-serif text-3xl font-bold">Presupuestos guardados</h2>
-          {budgets.length > 0 && <p className="font-mono text-xs font-bold uppercase">{budgets.length} {budgets.length === 1 ? 'presupuesto' : 'presupuestos'}</p>}
+          <h2 ref={headingRef} tabIndex={-1} id="history-title" className="min-w-0 font-serif text-3xl leading-tight font-bold tracking-tight break-words">Presupuestos guardados</h2>
+          {budgets.length > 0 && <p className="font-mono text-xs font-bold tracking-[0.08em] uppercase">{budgets.length} {budgets.length === 1 ? 'presupuesto' : 'presupuestos'}</p>}
         </div>
       </div>
 
@@ -150,7 +150,7 @@ export function History({
       {externalConflict && (
         <div role="alert" className="mb-6 border-2 border-error bg-white p-4">
           <p className="text-sm font-semibold text-error">Se detectaron cambios guardados desde otra pestaña mientras tenías cambios sin guardar.</p>
-          <p className="mt-2 text-sm leading-relaxed">Elige cómo continuar. Si mantienes tus cambios, se pedirá confirmación antes de sobrescribir la versión más reciente.</p>
+          <p className="mt-2 text-base leading-relaxed">Elige cómo continuar. Si mantienes tus cambios, se pedirá confirmación antes de sobrescribir la versión más reciente.</p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <button type="button" onClick={() => onResolveConflict('reload')} className={dangerButton}>
               Descartar mis cambios y recargar
@@ -165,7 +165,7 @@ export function History({
       {errorCode === 'invalid' ? (
         <div className="border-2 border-error bg-white p-4 sm:p-5">
           <p role="alert" className="text-sm font-semibold text-error">{error}</p>
-          <p className="mt-3 text-sm leading-relaxed">Puedes descargar una copia del contenido original antes de eliminarlo. La aplicación no modificará ni borrará estos datos automáticamente.</p>
+          <p className="mt-3 text-base leading-relaxed">Puedes descargar una copia del contenido original antes de eliminarlo. La aplicación no modificará ni borrará estos datos automáticamente.</p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <button type="button" onClick={downloadBackup} className={secondaryButton}>
               Descargar respaldo
@@ -194,7 +194,7 @@ export function History({
               }}
               className="mt-4 border-2 border-error bg-white p-4"
             >
-              <p className="text-sm font-semibold">¿Eliminar permanentemente los datos dañados? Descarga un respaldo si lo necesitas; esta acción no se puede deshacer.</p>
+              <p className="text-base font-semibold leading-relaxed">¿Eliminar permanentemente los datos dañados? Descarga un respaldo si lo necesitas; esta acción no se puede deshacer.</p>
               <div className="mt-3 flex flex-col gap-3 sm:flex-row">
                 <button ref={recoveryConfirmRef} type="button" onClick={confirmDiscardCorruptData} className={dangerButton}>
                   Sí, borrar datos
@@ -211,7 +211,7 @@ export function History({
         <p role="alert" className="border-2 border-error bg-white p-4 text-sm font-semibold text-error">{error}</p>
       ) : budgets.length === 0 ? (
         <div className="border-2 border-dashed border-graphite/50 bg-ivory p-6">
-          <p className="text-sm leading-relaxed">Todavía no hay presupuestos guardados. Completa la calculadora y usa «Guardar presupuesto» para conservar una obra.</p>
+          <p className="text-base leading-relaxed">Todavía no hay presupuestos guardados. Completa la calculadora y usa «Guardar presupuesto» para conservar una obra.</p>
         </div>
       ) : (
         <ul className="space-y-4">
@@ -222,15 +222,15 @@ export function History({
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-serif text-xl font-bold break-words">{budget.input.name}</h3>
-                      {isEditing && <span className="border-2 border-graphite bg-accent px-2 py-1 font-mono text-[0.65rem] font-bold uppercase">En edición</span>}
+                      <h3 className="font-serif text-xl leading-snug font-bold break-words">{budget.input.name}</h3>
+                      {isEditing && <span className="border-2 border-graphite bg-accent px-2 py-1 font-mono text-xs font-bold uppercase">En edición</span>}
                     </div>
-                    <p className="mt-1 font-mono text-xs font-bold uppercase">{artworkTypeLabel(budget.input)} · {techniqueLabel(budget.input)}</p>
+                    <p className="mt-1 font-mono text-xs font-bold tracking-[0.08em] uppercase break-words">{artworkTypeLabel(budget.input)} · {techniqueLabel(budget.input)}</p>
                     <p className="mt-2 text-sm">Actualizado el <time dateTime={budget.updatedAt}>{dateFormatter.format(new Date(budget.updatedAt))}</time></p>
                   </div>
-                  <div className="shrink-0 sm:text-right">
-                    <p className="font-mono text-xs font-bold uppercase">Precio sugerido</p>
-                    <p className="mt-1 font-serif text-2xl font-bold">{suggestedPrice(budget.input)}</p>
+                  <div className="min-w-0 sm:text-right">
+                    <p className="font-mono text-xs font-bold tracking-[0.08em] uppercase">Precio sugerido</p>
+                    <p className="mt-1 font-serif text-2xl leading-tight font-bold break-words tabular-nums">{suggestedPrice(budget.input)}</p>
                   </div>
                 </div>
 
@@ -264,7 +264,7 @@ export function History({
                     }}
                     className="mt-4 border-2 border-error bg-white p-4"
                   >
-                    <p className="text-sm font-semibold">¿Eliminar «{budget.input.name}»? Esta acción no se puede deshacer.</p>
+                    <p className="text-base font-semibold leading-relaxed break-words">¿Eliminar «{budget.input.name}»? Esta acción no se puede deshacer.</p>
                     <div className="mt-3 flex flex-col gap-3 sm:flex-row">
                       <button ref={confirmButtonRef} type="button" onClick={() => confirmDelete(budget.id)} className={dangerButton}>
                         Sí, eliminar

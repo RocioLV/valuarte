@@ -20,13 +20,13 @@ interface ComparisonProps {
 
 export function Comparison({ costs, totalCost }: ComparisonProps) {
   return (
-    <section aria-labelledby="comparison-title" className="border-2 border-graphite bg-white p-5 sm:p-8">
+    <section aria-labelledby="comparison-title" className="min-w-0 border-2 border-graphite bg-white p-5 sm:p-8">
       <p className="font-mono text-xs font-bold tracking-[0.12em] uppercase">03 / Escenarios de venta</p>
-      <h2 id="comparison-title" className="mt-3 font-serif text-3xl font-bold">Compara dos precios</h2>
+      <h2 id="comparison-title" className="mt-3 font-serif text-3xl leading-tight font-bold tracking-tight">Compara dos precios</h2>
       {costs !== null && totalCost !== null ? (
         <ComparisonForm costs={costs} totalCost={totalCost} />
       ) : (
-        <p className="mt-4 text-sm leading-relaxed" role="status">Calcula primero el precio sugerido para comparar escenarios con los costos actuales.</p>
+        <p className="mt-3 text-base leading-relaxed text-graphite/90" role="status">Calcula primero el precio sugerido para comparar escenarios con los costos actuales.</p>
       )}
     </section>
   )
@@ -64,7 +64,7 @@ function ComparisonForm({ costs, totalCost }: { costs: BudgetCosts; totalCost: n
     return (
       <div>
         <div className="flex flex-wrap items-baseline gap-x-1">
-          <label htmlFor={name} className="block text-sm font-semibold">{label}</label>
+          <label htmlFor={name} className="block text-sm font-semibold break-words">{label}</label>
           <span aria-hidden="true" className="text-sm font-semibold text-terracotta">*</span>
         </div>
         <input
@@ -92,7 +92,7 @@ function ComparisonForm({ costs, totalCost }: { costs: BudgetCosts; totalCost: n
 
   return (
     <>
-      <p className="mt-4 text-sm leading-relaxed">Compara dos ingresos usando los costos actuales, incluida tu remuneración. Los campos marcados con * son obligatorios y los montos se formatean al salir del campo.</p>
+      <p className="mt-3 text-base leading-relaxed text-graphite/90">Compara dos ingresos usando los costos actuales, incluida tu remuneración. Los campos marcados con * son obligatorios y los montos se formatean al salir del campo.</p>
       <form noValidate onSubmit={handleSubmit(onSubmit, onInvalid)} onChange={() => { setComparison(null); setCalculationError(''); setValidationSummary('') }} className="mt-6 space-y-5">
         {validationSummary && (
           <div role="alert" className="border-2 border-error bg-white p-4">
@@ -115,7 +115,7 @@ function ComparisonForm({ costs, totalCost }: { costs: BudgetCosts; totalCost: n
             </div>
             <div className="mt-4 border-2 border-graphite bg-accent p-5">
               <p className="font-mono text-sm font-bold">Diferencia de excedente (B − A)</p>
-              <p className="mt-2 font-serif text-3xl font-bold break-words">{currency.format(comparison.surplusDifference)}</p>
+              <p className="mt-2 font-serif text-3xl leading-tight font-bold break-words tabular-nums">{currency.format(comparison.surplusDifference)}</p>
               <p className="mt-2 text-sm">
                 {comparison.surplusDifference > 0 ? 'El escenario B genera mayor excedente.' : comparison.surplusDifference < 0 ? 'El escenario A genera mayor excedente.' : 'Ambos escenarios generan el mismo excedente.'}
               </p>
@@ -137,9 +137,9 @@ function ScenarioCard({ title, result, totalCost }: { title: string; result: Sce
   ]
   return (
     <section aria-label={title} className="min-w-0 border-2 border-graphite bg-ivory p-5">
-      <h3 className="font-mono text-sm font-bold uppercase">{title}</h3>
+      <h3 className="font-mono text-sm font-bold tracking-[0.08em] uppercase">{title}</h3>
       <dl className="mt-4 space-y-3 border-t-2 border-graphite pt-4 text-sm">
-        {rows.map(([label, value]) => <div key={label} className="flex flex-wrap justify-between gap-x-4 gap-y-1"><dt>{label}</dt><dd className="font-semibold break-words">{value}</dd></div>)}
+        {rows.map(([label, value]) => <div key={label} className="flex flex-wrap justify-between gap-x-4 gap-y-1"><dt className="min-w-0 break-words">{label}</dt><dd className="min-w-0 font-semibold break-words tabular-nums">{value}</dd></div>)}
       </dl>
     </section>
   )
